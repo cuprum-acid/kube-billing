@@ -60,6 +60,7 @@ type SubscriptionStatus struct {
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 	State              string             `json:"state,omitempty"`
 	LastPayment        metav1.Time        `json:"lastPayment,omitempty"`
+	NextBilling        metav1.Time        `json:"nextBilling,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 }
 

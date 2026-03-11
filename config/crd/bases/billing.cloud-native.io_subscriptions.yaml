@@ -124,6 +124,9 @@ spec:
               lastPayment:
                 format: date-time
                 type: string
+              nextBilling:
+                format: date-time
+                type: string
               observedGeneration:
                 format: int64
                 type: integer

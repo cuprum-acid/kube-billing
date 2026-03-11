@@ -131,13 +131,52 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 		log.Info("Activating subscription")
 
+		now := metav1.Now()
+
 		sub.Status.State = "Active"
-		sub.Status.LastPayment = metav1.Now()
+		sub.Status.LastPayment = now
+		sub.Status.NextBilling = metav1.NewTime(now.Add(30 * 24 * time.Hour))
 		sub.Status.ObservedGeneration = sub.Generation
 
 		if err := r.Status().Update(ctx, &sub); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		return ctrl.Result{RequeueAfter: 30 * 24 * time.Hour}, nil
+	}
+
+	// ==============================
+	// PERIODIC BILLING
+	// ==============================
+
+	if sub.Status.State == "Active" {
+
+		now := time.Now()
+
+		if !sub.Status.NextBilling.IsZero() && now.After(sub.Status.NextBilling.Time) {
+
+			log.Info("Processing recurring payment", "subscription", sub.Name)
+
+			// здесь будет реальный платежный gateway
+			// сейчас просто симулируем
+
+			sub.Status.LastPayment = metav1.Now()
+			sub.Status.NextBilling = metav1.NewTime(now.Add(30 * 24 * time.Hour))
+
+			if err := r.Status().Update(ctx, &sub); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			// Пока замени: 30 * 24 * time.Hour на 30 * time.Second
+			// Тогда будет: billing каждые 30 секунд
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		wait := time.Until(sub.Status.NextBilling.Time)
+
+		log.Info("Next billing scheduled", "after", wait)
+
+		return ctrl.Result{RequeueAfter: wait}, nil
 	}
 
 	return ctrl.Result{}, nil
