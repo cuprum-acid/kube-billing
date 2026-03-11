@@ -57,6 +57,9 @@ type SubscriptionReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
 func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
+	ctx, span := Tracer.Start(ctx, "ReconcileSubscription")
+	defer span.End()
+
 	log := log.FromContext(ctx)
 
 	var sub billingv1alpha1.Subscription
@@ -167,15 +170,19 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				log.Error(err, "Failed to parse plan price", "price", plan.Spec.Price)
 				return ctrl.Result{}, err
 			}
+
+			ctx2, paymentSpan := Tracer.Start(ctx, "ProcessPayment")
+
 			RevenueTotal.Add(price)
 
+			paymentSpan.End()
 			// здесь будет реальный платежный gateway
 			// сейчас просто симулируем
 
 			sub.Status.LastPayment = metav1.Now()
 			sub.Status.NextBilling = metav1.NewTime(now.Add(30 * 24 * time.Hour))
 
-			if err := r.Status().Update(ctx, &sub); err != nil {
+			if err := r.Status().Update(ctx2, &sub); err != nil {
 				return ctrl.Result{}, err
 			}
 
@@ -239,6 +246,9 @@ func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj
 		"plan", plan.Name,
 		"affectedSubscriptions", len(requests),
 	)
+
+	ctx, span := Tracer.Start(ctx, "MapPlanToSubscriptions")
+	defer span.End()
 
 	return requests
 }
