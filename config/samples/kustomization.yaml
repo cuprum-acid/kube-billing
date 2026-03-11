@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- billing_v1alpha1_billingplan.yaml
+- billing_v1alpha1_subscription.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

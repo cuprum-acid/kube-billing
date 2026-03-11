@@ -1,0 +1,9 @@
+apiVersion: billing.cloud-native.io/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    app.kubernetes.io/name: kube-billing
+    app.kubernetes.io/managed-by: kustomize
+  name: subscription-sample
+spec:
+  # TODO(user): Add fields here

@@ -1,0 +1,7 @@
+apiVersion: billing.cloud-native.io/v1alpha1
+kind: Subscription
+metadata:
+  name: sub-user1
+spec:
+  userId: user1
+  planRef: basic

@@ -1,0 +1,10 @@
+apiVersion: billing.cloud-native.io/v1alpha1
+kind: BillingPlan
+metadata:
+  name: basic
+spec:
+  price: "10.00"
+  currency: USD
+  billingPeriod: 30d
+  limits:
+    apiCalls: 10000
