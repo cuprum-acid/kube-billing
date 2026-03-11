@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -133,6 +134,8 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 		log.Info("Activating subscription")
 
+		ActiveSubscriptions.Inc()
+
 		now := metav1.Now()
 
 		sub.Status.State = "Active"
@@ -158,6 +161,13 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if !sub.Status.NextBilling.IsZero() && now.After(sub.Status.NextBilling.Time) {
 
 			log.Info("Processing recurring payment", "subscription", sub.Name)
+
+			price, err := strconv.ParseFloat(plan.Spec.Price, 64)
+			if err != nil {
+				log.Error(err, "Failed to parse plan price", "price", plan.Spec.Price)
+				return ctrl.Result{}, err
+			}
+			RevenueTotal.Add(price)
 
 			// здесь будет реальный платежный gateway
 			// сейчас просто симулируем
