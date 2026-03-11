@@ -25,7 +25,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	billingv1alpha1 "github.com/example/kube-billing/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -187,5 +189,46 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&billingv1alpha1.Subscription{}).
 		Named("subscription").
+		Watches(
+			&billingv1alpha1.BillingPlan{},
+			handler.EnqueueRequestsFromMapFunc(r.mapPlanToSubscriptions),
+		).
 		Complete(r)
+}
+
+func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj client.Object) []reconcile.Request {
+
+	log := log.FromContext(ctx)
+
+	plan := obj.(*billingv1alpha1.BillingPlan)
+
+	var subs billingv1alpha1.SubscriptionList
+
+	if err := r.List(ctx, &subs, client.InNamespace(plan.Namespace)); err != nil {
+		log.Error(err, "unable to list subscriptions")
+		return nil
+	}
+
+	var requests []reconcile.Request
+
+	for _, sub := range subs.Items {
+
+		if sub.Spec.PlanRef == plan.Name {
+
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      sub.Name,
+					Namespace: sub.Namespace,
+				},
+			})
+
+		}
+	}
+
+	log.Info("BillingPlan change detected",
+		"plan", plan.Name,
+		"affectedSubscriptions", len(requests),
+	)
+
+	return requests
 }
