@@ -1,8 +1,8 @@
 # kube-billing
-// TODO(user): Add simple overview of use/purpose
+A Kubernetes operator for managing billing plans and subscriptions.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+kube-billing provides `BillingPlan` and `Subscription` Custom Resource Definitions (CRDs) to natively manage tenant billing configurations within a Kubernetes cluster.
 
 ## Getting Started
 
@@ -110,13 +110,6 @@ the '--force' flag and manually ensure that any custom configuration
 previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
 is manually re-applied afterwards.
 
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
 ## License
 
 Copyright 2026.
@@ -132,4 +125,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
