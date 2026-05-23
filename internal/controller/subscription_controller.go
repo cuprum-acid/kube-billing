@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -33,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	billingv1alpha1 "github.com/example/kube-billing/api/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const SubscriptionFinalizer = "billing.cloud-native.io/finalizer"
@@ -132,6 +133,15 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		log.Error(err, "BillingPlan not found")
 
 		sub.Status.State = "Error"
+
+		// Устанавливаем условие BillingPlanNotFound
+		meta.SetStatusCondition(&sub.Status.Conditions, metav1.Condition{
+			Type:    billingv1alpha1.SubscriptionBillingPlanNotFound,
+			Status:  metav1.ConditionTrue,
+			Reason:  "BillingPlanNotFound",
+			Message: fmt.Sprintf("Referenced BillingPlan '%s' does not exist", sub.Spec.PlanRef),
+		})
+
 		_ = r.Status().Update(ctx, &sub)
 
 		return ctrl.Result{RequeueAfter: time.Minute}, nil
@@ -156,6 +166,22 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		sub.Status.LastPayment = now
 		sub.Status.NextBilling = metav1.NewTime(now.Add(billingInterval))
 		sub.Status.ObservedGeneration = sub.Generation
+
+		// Устанавливаем условие Active
+		meta.SetStatusCondition(&sub.Status.Conditions, metav1.Condition{
+			Type:    billingv1alpha1.SubscriptionActive,
+			Status:  metav1.ConditionTrue,
+			Reason:  "SubscriptionActivated",
+			Message: "Subscription successfully activated",
+		})
+
+		// Снимаем условие BillingPlanNotFound если оно было
+		meta.SetStatusCondition(&sub.Status.Conditions, metav1.Condition{
+			Type:    billingv1alpha1.SubscriptionBillingPlanNotFound,
+			Status:  metav1.ConditionFalse,
+			Reason:  "BillingPlanFound",
+			Message: "Referenced BillingPlan exists",
+		})
 
 		if err := r.Status().Update(ctx, &sub); err != nil {
 			return ctrl.Result{}, err
@@ -186,6 +212,15 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				// Перевод подписки в статус ошибки
 				sub.Status.State = "PaymentError"
 				sub.Status.ObservedGeneration = sub.Generation
+
+				// Устанавливаем условие PaymentError
+				meta.SetStatusCondition(&sub.Status.Conditions, metav1.Condition{
+					Type:    billingv1alpha1.SubscriptionPaymentError,
+					Status:  metav1.ConditionTrue,
+					Reason:  "PaymentFailed",
+					Message: fmt.Sprintf("Failed to process payment: %v", err),
+				})
+
 				if err := r.Status().Update(ctx, &sub); err != nil {
 					return ctrl.Result{}, err
 				}
@@ -211,6 +246,20 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 			sub.Status.LastPayment = metav1.Now()
 			sub.Status.NextBilling = metav1.NewTime(now.Add(billingInterval))
+
+			// Устанавливаем условие Active и снимаем PaymentError
+			meta.SetStatusCondition(&sub.Status.Conditions, metav1.Condition{
+				Type:    billingv1alpha1.SubscriptionActive,
+				Status:  metav1.ConditionTrue,
+				Reason:  "PaymentProcessed",
+				Message: "Payment processed successfully",
+			})
+			meta.SetStatusCondition(&sub.Status.Conditions, metav1.Condition{
+				Type:    billingv1alpha1.SubscriptionPaymentError,
+				Status:  metav1.ConditionFalse,
+				Reason:  "PaymentSuccess",
+				Message: "Last payment was successful",
+			})
 
 			if err := r.Status().Update(ctx2, &sub); err != nil {
 				return ctrl.Result{}, err

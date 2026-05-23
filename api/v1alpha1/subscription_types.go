@@ -20,6 +20,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// Subscription condition types
+const (
+	// SubscriptionActive indicates that the subscription is active and billing normally
+	SubscriptionActive string = "Active"
+	// SubscriptionPaymentError indicates that a payment has failed
+	SubscriptionPaymentError string = "PaymentError"
+	// SubscriptionBillingPlanNotFound indicates that the referenced BillingPlan does not exist
+	SubscriptionBillingPlanNotFound string = "BillingPlanNotFound"
+)
+
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
