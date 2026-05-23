@@ -172,6 +172,9 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 		sub.Status.State = "Error"
 
+		// Инкремент метрики неудачных платежей (план не найден)
+		PaymentFailures.Inc()
+
 		// Устанавливаем условие BillingPlanNotFound
 		meta.SetStatusCondition(&sub.Status.Conditions, metav1.Condition{
 			Type:    billingv1alpha1.SubscriptionBillingPlanNotFound,
@@ -247,7 +250,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			if err != nil {
 				log.Error(err, "Failed to parse plan price", "price", plan.Spec.Price)
 
-				// Инкремент метрики неудачных платежей
+				// Инкремент метрики неудачных платежей (ошибка парсинга цены)
 				PaymentFailures.Inc()
 
 				// Перевод подписки в статус ошибки
