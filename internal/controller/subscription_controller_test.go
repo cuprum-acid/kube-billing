@@ -18,11 +18,13 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,54 +33,335 @@ import (
 )
 
 var _ = Describe("Subscription Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+	var (
+		ctx       context.Context
+		plan      *billingv1alpha1.BillingPlan
+		sub       *billingv1alpha1.Subscription
+		planName  string
+		subName   string
+		namespace string
+	)
 
-		ctx := context.Background()
+	BeforeEach(func() {
+		ctx = context.Background()
+		namespace = "default"
+		planName = "test-plan-" + randomString()
+		subName = "test-sub-" + randomString()
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+		// Создаём тестовый BillingPlan
+		plan = &billingv1alpha1.BillingPlan{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      planName,
+				Namespace: namespace,
+			},
+			Spec: billingv1alpha1.BillingPlanSpec{
+				Price:                  "10.00",
+				Currency:               "USD",
+				BillingPeriod:          "monthly",
+				RequeueIntervalSeconds: 30,
+			},
 		}
-		subscription := &billingv1alpha1.Subscription{}
+		Expect(k8sClient.Create(ctx, plan)).To(Succeed())
+	})
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind Subscription")
-			err := k8sClient.Get(ctx, typeNamespacedName, subscription)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &billingv1alpha1.Subscription{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+	AfterEach(func() {
+		// Удаляем Subscription если существует
+		if sub != nil {
+			_ = k8sClient.Delete(ctx, sub)
+		}
+		// Удаляем BillingPlan
+		_ = k8sClient.Delete(ctx, plan)
+	})
+
+	Context("Subscription Activation", func() {
+		It("should activate subscription when BillingPlan exists", func() {
+			By("Creating a Subscription")
+			sub = &billingv1alpha1.Subscription{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      subName,
+					Namespace: namespace,
+				},
+				Spec: billingv1alpha1.SubscriptionSpec{
+					UserID:  "user1",
+					PlanRef: planName,
+				},
 			}
+			Expect(k8sClient.Create(ctx, sub)).To(Succeed())
+
+			By("Reconciling the subscription multiple times")
+			controllerReconciler := &SubscriptionReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(100),
+			}
+
+			// Первая реконсиляция — добавление finalizer
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      subName,
+					Namespace: namespace,
+				},
+			})
+
+			// Вторая реконсиляция — активация
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      subName,
+					Namespace: namespace,
+				},
+			})
+
+			By("Verifying subscription is activated")
+			Eventually(func(g Gomega) {
+				updated := &billingv1alpha1.Subscription{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subName, Namespace: namespace}, updated)).To(Succeed())
+				g.Expect(updated.Status.State).To(Equal("Active"))
+				g.Expect(updated.Status.LastPayment).ToNot(BeZero())
+				g.Expect(updated.Status.NextBilling).ToNot(BeZero())
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
 		})
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &billingv1alpha1.Subscription{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+		It("should add finalizer to subscription", func() {
+			By("Creating a Subscription")
+			sub = &billingv1alpha1.Subscription{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      subName,
+					Namespace: namespace,
+				},
+				Spec: billingv1alpha1.SubscriptionSpec{
+					UserID:  "user1",
+					PlanRef: planName,
+				},
+			}
+			Expect(k8sClient.Create(ctx, sub)).To(Succeed())
 
-			By("Cleanup the specific resource instance Subscription")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
+			By("Reconciling")
 			controllerReconciler := &SubscriptionReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subName, Namespace: namespace},
 			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Verifying finalizer is added")
+			Eventually(func(g Gomega) {
+				updated := &billingv1alpha1.Subscription{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subName, Namespace: namespace}, updated)).To(Succeed())
+				g.Expect(updated.Finalizers).To(ContainElement("billing.cloud-native.io/finalizer"))
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
+		})
+	})
+
+	Context("BillingPlan Not Found", func() {
+		It("should set subscription state to Error when BillingPlan is missing", func() {
+			By("Creating a Subscription with non-existent plan reference")
+			subNameNotFound := "test-sub-notfound-" + randomString()
+			sub = &billingv1alpha1.Subscription{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      subNameNotFound,
+					Namespace: namespace,
+				},
+				Spec: billingv1alpha1.SubscriptionSpec{
+					UserID:  "user1",
+					PlanRef: "non-existent-plan",
+				},
+			}
+			Expect(k8sClient.Create(ctx, sub)).To(Succeed())
+
+			By("Reconciling multiple times to trigger status update")
+			controllerReconciler := &SubscriptionReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(100),
+			}
+			// Первая реконсиляция — добавление finalizer
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subNameNotFound, Namespace: namespace},
+			})
+			// Вторая реконсиляция — проверка плана и установка Error
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subNameNotFound, Namespace: namespace},
+			})
+
+			By("Verifying subscription state is Error")
+			Eventually(func(g Gomega) {
+				updated := &billingv1alpha1.Subscription{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subNameNotFound, Namespace: namespace}, updated)).To(Succeed())
+				g.Expect(updated.Status.State).To(Equal("Error"))
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
+		})
+	})
+
+	Context("Periodic Billing", func() {
+		It("should process recurring payment after billing interval", func() {
+			By("Creating a Subscription")
+			subNameBilling := "test-sub-billing-" + randomString()
+			sub = &billingv1alpha1.Subscription{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      subNameBilling,
+					Namespace: namespace,
+				},
+				Spec: billingv1alpha1.SubscriptionSpec{
+					UserID:  "user1",
+					PlanRef: planName,
+				},
+			}
+			Expect(k8sClient.Create(ctx, sub)).To(Succeed())
+
+			By("Activating subscription with multiple reconcile calls")
+			controllerReconciler := &SubscriptionReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(100),
+			}
+
+			// Первая реконсиляция — добавление finalizer
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subNameBilling, Namespace: namespace},
+			})
+
+			// Вторая реконсиляция — активация
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subNameBilling, Namespace: namespace},
+			})
+
+			By("Waiting for activation")
+			Eventually(func(g Gomega) {
+				updated := &billingv1alpha1.Subscription{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subNameBilling, Namespace: namespace}, updated)).To(Succeed())
+				g.Expect(updated.Status.State).To(Equal("Active"))
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
+
+			By("Simulating time passage by updating NextBilling to the past")
+			// Обновляем NextBilling на время в прошлом чтобы триггерить биллинг
+			updatedSub := &billingv1alpha1.Subscription{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subNameBilling, Namespace: namespace}, updatedSub)).To(Succeed())
+			updatedSub.Status.NextBilling = metav1.NewTime(time.Now().Add(-1 * time.Hour))
+			Expect(k8sClient.Status().Update(ctx, updatedSub)).To(Succeed())
+
+			By("Reconciling again to trigger billing")
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subNameBilling, Namespace: namespace},
+			})
+
+			By("Verifying payment was processed")
+			Eventually(func(g Gomega) {
+				updated := &billingv1alpha1.Subscription{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subNameBilling, Namespace: namespace}, updated)).To(Succeed())
+				g.Expect(updated.Status.LastPayment).ToNot(BeZero())
+				g.Expect(updated.Status.NextBilling.Time).To(BeTemporally(">", time.Now()))
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
+		})
+	})
+
+	Context("Finalizer on Deletion", func() {
+		It("should run final billing logic before deletion", func() {
+			By("Creating and activating a Subscription")
+			sub = &billingv1alpha1.Subscription{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      subName,
+					Namespace: namespace,
+				},
+				Spec: billingv1alpha1.SubscriptionSpec{
+					UserID:  "user1",
+					PlanRef: planName,
+				},
+			}
+			Expect(k8sClient.Create(ctx, sub)).To(Succeed())
+
+			By("Activating subscription")
+			controllerReconciler := &SubscriptionReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(100),
+			}
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subName, Namespace: namespace},
+			})
+
+			By("Waiting for finalizer to be added")
+			Eventually(func(g Gomega) {
+				updated := &billingv1alpha1.Subscription{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subName, Namespace: namespace}, updated)).To(Succeed())
+				g.Expect(updated.Finalizers).To(ContainElement("billing.cloud-native.io/finalizer"))
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
+
+			By("Deleting the subscription")
+			Expect(k8sClient.Delete(ctx, sub)).To(Succeed())
+
+			By("Reconciling to process deletion")
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subName, Namespace: namespace},
+			})
+
+			By("Verifying subscription is deleted")
+			Eventually(func(g Gomega) {
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: subName, Namespace: namespace}, &billingv1alpha1.Subscription{})
+				g.Expect(errors.IsNotFound(err)).To(BeTrue())
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
+		})
+	})
+
+	Context("BillingPlan Change Triggers Subscription Reconcile", func() {
+		It("should reconcile subscriptions when BillingPlan is updated", func() {
+			By("Creating a Subscription")
+			subNamePlanChange := "test-sub-planchange-" + randomString()
+			sub = &billingv1alpha1.Subscription{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      subNamePlanChange,
+					Namespace: namespace,
+				},
+				Spec: billingv1alpha1.SubscriptionSpec{
+					UserID:  "user1",
+					PlanRef: planName,
+				},
+			}
+			Expect(k8sClient.Create(ctx, sub)).To(Succeed())
+
+			By("Activating subscription")
+			controllerReconciler := &SubscriptionReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(100),
+			}
+
+			// Первая реконсиляция — добавление finalizer
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subNamePlanChange, Namespace: namespace},
+			})
+
+			// Вторая реконсиляция — активация
+			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: subNamePlanChange, Namespace: namespace},
+			})
+
+			By("Updating the BillingPlan")
+			updatedPlan := &billingv1alpha1.BillingPlan{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: planName, Namespace: namespace}, updatedPlan)).To(Succeed())
+			updatedPlan.Spec.Price = "15.00"
+			Expect(k8sClient.Update(ctx, updatedPlan)).To(Succeed())
+
+			By("Verifying subscription remains active after plan change")
+			Eventually(func(g Gomega) {
+				updated := &billingv1alpha1.Subscription{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subNamePlanChange, Namespace: namespace}, updated)).To(Succeed())
+				g.Expect(updated.Status.State).To(Equal("Active"))
+			}, time.Second*10, time.Millisecond*500).Should(Succeed())
 		})
 	})
 })
+
+// randomString generates a random string for unique resource names
+func randomString() string {
+	return randomStringWithLength(8)
+}
+
+func randomStringWithLength(n int) string {
+	letters := []rune("abcdefghijklmnopqrstuvwxyz0123456789")
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[RandomInt(len(letters))]
+	}
+	return string(b)
+}

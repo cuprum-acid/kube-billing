@@ -116,3 +116,10 @@ func getFirstFoundEnvTestBinaryDir() string {
 	}
 	return ""
 }
+
+// RandomInt returns a random integer in the range [0, max).
+// Used for generating unique test resource names.
+func RandomInt(max int) int {
+	seed := time.Now().UnixNano()
+	return int(seed % int64(max))
+}
