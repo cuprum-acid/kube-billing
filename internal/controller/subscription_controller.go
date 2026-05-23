@@ -88,8 +88,40 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				ActiveSubscriptions.Dec()
 			}
 
-			// здесь будет финальный биллинг
-			// например списание последнего платежа
+			// Финальный биллинг — пропорциональное списание за оставшиеся дни
+			// Получаем BillingPlan для расчёта
+			var plan billingv1alpha1.BillingPlan
+			if err := r.Get(ctx, types.NamespacedName{Name: sub.Spec.PlanRef, Namespace: req.Namespace}, &plan); err == nil {
+				// Проверяем, был ли уже биллинг в текущем периоде
+				if !sub.Status.NextBilling.IsZero() {
+					// Считаем пропорциональную сумму за неиспользованные дни
+					now := time.Now()
+					if now.Before(sub.Status.NextBilling.Time) {
+						// Ещё не наступил следующий период — считаем пропорционально
+						remainingTime := sub.Status.NextBilling.Time.Sub(now)
+						totalPeriod := time.Duration(plan.Spec.RequeueIntervalSeconds) * time.Second
+
+						if totalPeriod > 0 && remainingTime > 0 {
+							price, err := strconv.ParseFloat(plan.Spec.Price, 64)
+							if err == nil {
+								// Пропорциональный возврат (refund)
+								refundAmount := price * (remainingTime.Seconds() / totalPeriod.Seconds())
+
+								if refundAmount > 0 {
+									log.Info("Final billing: calculating refund",
+										"amount", fmt.Sprintf("%.2f", refundAmount),
+										"remainingTime", remainingTime.String())
+
+									// Генерация события о финальном биллинге
+									r.Recorder.Event(&sub, "Normal", "FinalBilling",
+										fmt.Sprintf("Final billing: refund of %s %s (pro-rated)",
+											fmt.Sprintf("%.2f", refundAmount), plan.Spec.Currency))
+								}
+							}
+						}
+					}
+				}
+			}
 
 			controllerutil.RemoveFinalizer(&sub, SubscriptionFinalizer)
 
