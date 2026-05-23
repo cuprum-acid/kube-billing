@@ -280,6 +280,121 @@ var _ = Describe("Manager", Ordered, func() {
 		//    strings.ToLower(<Kind>),
 		// ))
 	})
+
+	Context("Billing Flow E2E", func() {
+		const (
+			testNamespace = "billing-test"
+			planName      = "e2e-test-plan"
+			subName       = "e2e-test-sub"
+		)
+
+		BeforeAll(func() {
+			By("creating test namespace")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+		})
+
+		AfterAll(func() {
+			By("deleting test namespace")
+			cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should create BillingPlan and Subscription, then process billing", func() {
+			By("Creating a BillingPlan")
+			planYAML := fmt.Sprintf(`
+apiVersion: billing.cloud-native.io/v1alpha1
+kind: BillingPlan
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  price: "10.00"
+  currency: USD
+  billingPeriod: monthly
+  requeueIntervalSeconds: 30
+`, planName, testNamespace)
+			tmpFile := filepath.Join(os.TempDir(), "e2e-plan.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(planYAML), 0o644)).To(Succeed())
+			cmd := exec.Command("kubectl", "apply", "-f", tmpFile)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create BillingPlan")
+
+			By("Waiting for BillingPlan to be available")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "billingplan", planName, "-n", testNamespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(ContainSubstring(planName))
+			}, 30*time.Second, time.Second).Should(Succeed())
+
+			By("Creating a Subscription")
+			subYAML := fmt.Sprintf(`
+apiVersion: billing.cloud-native.io/v1alpha1
+kind: Subscription
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  userId: e2e-user1
+  planRef: %s
+`, subName, testNamespace, planName)
+			tmpFile = filepath.Join(os.TempDir(), "e2e-sub.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(subYAML), 0o644)).To(Succeed())
+			cmd = exec.Command("kubectl", "apply", "-f", tmpFile)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Subscription")
+
+			By("Waiting for subscription to be activated")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "jsonpath={.status.state}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Active"))
+			}, 30*time.Second, time.Second).Should(Succeed())
+
+			By("Verifying subscription has finalizer")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "jsonpath={.spec.finalizers}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(ContainSubstring("billing.cloud-native.io/finalizer"))
+			}, 10*time.Second, time.Second).Should(Succeed())
+
+			By("Waiting for billing cycle to complete")
+			// Ждём 35 секунд чтобы billing цикл сработал (интервал 30 секунд)
+			time.Sleep(35 * time.Second)
+
+			By("Verifying payment was processed")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "jsonpath={.status.lastPayment}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).ToNot(BeEmpty())
+			}, 10*time.Second, time.Second).Should(Succeed())
+
+			By("Verifying metrics show active subscription")
+			// Получаем метрики через kubectl port-forward
+			cmd = exec.Command("kubectl", "get", "pods", "-n", namespace, "-l", "control-plane=controller-manager", "-o", "jsonpath={.items[0].metadata.name}")
+			podName, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			podName = utils.GetNonEmptyLines(podName)[0]
+
+			// Используем kubectl exec для получения метрик
+			cmd = exec.Command("kubectl", "exec", podName, "-n", namespace, "--", "wget", "-qO-", "localhost:8080/metrics")
+			metricsOutput, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metricsOutput).To(ContainSubstring("billing_active_subscriptions 1"))
+			Expect(metricsOutput).To(ContainSubstring("billing_revenue_total"))
+
+			By("Cleaning up test resources")
+			cmd = exec.Command("kubectl", "delete", "subscription", subName, "-n", testNamespace, "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "billingplan", planName, "-n", testNamespace, "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+		})
+	})
 })
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
