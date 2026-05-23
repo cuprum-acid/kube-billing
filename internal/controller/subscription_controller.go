@@ -96,6 +96,12 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			if err := r.Update(ctx, &sub); err != nil {
 				return ctrl.Result{}, err
 			}
+
+			// Обновляем статус BillingPlan после удаления подписки
+			// Получаем planRef из spec подписки
+			if sub.Spec.PlanRef != "" {
+				_ = r.updateBillingPlanStatus(ctx, sub.Spec.PlanRef, req.Namespace)
+			}
 		}
 
 		return ctrl.Result{}, nil
@@ -187,6 +193,9 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, err
 		}
 
+		// Обновляем статус BillingPlan
+		_ = r.updateBillingPlanStatus(ctx, plan.Name, req.Namespace)
+
 		return ctrl.Result{RequeueAfter: billingInterval}, nil
 	}
 
@@ -265,6 +274,9 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				return ctrl.Result{}, err
 			}
 
+			// Обновляем статус BillingPlan
+			_ = r.updateBillingPlanStatus(ctx2, plan.Name, req.Namespace)
+
 			// Генерация события об успешном платеже
 			r.Recorder.Event(&sub, "Normal", "PaymentProcessed",
 				fmt.Sprintf("Payment of %s %s processed successfully", plan.Spec.Price, plan.Spec.Currency))
@@ -332,6 +344,76 @@ func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj
 	defer span.End()
 
 	return requests
+}
+
+// updateBillingPlanStatus updates the status of a BillingPlan with current subscription count and revenue
+func (r *SubscriptionReconciler) updateBillingPlanStatus(ctx context.Context, planName, namespace string) error {
+	// Получаем BillingPlan
+	plan := &billingv1alpha1.BillingPlan{}
+	if err := r.Get(ctx, types.NamespacedName{Name: planName, Namespace: namespace}, plan); err != nil {
+		return err
+	}
+
+	// Считаем активные подписки
+	var subs billingv1alpha1.SubscriptionList
+	if err := r.List(ctx, &subs, client.InNamespace(namespace)); err != nil {
+		return err
+	}
+
+	activeCount := int32(0)
+	totalRevenue := 0.0
+
+	for _, sub := range subs.Items {
+		if sub.Spec.PlanRef == planName {
+			if sub.Status.State == "Active" {
+				activeCount++
+			}
+			// Считаем revenue из всех платежей
+			if !sub.Status.LastPayment.IsZero() {
+				price, err := strconv.ParseFloat(plan.Spec.Price, 64)
+				if err == nil {
+					totalRevenue += price
+				}
+			}
+		}
+	}
+
+	// Обновляем статус если изменился
+	updated := false
+	if plan.Status.ActiveSubscriptions != activeCount {
+		plan.Status.ActiveSubscriptions = activeCount
+		updated = true
+	}
+
+	// Форматируем revenue с 2 знаками после запятой
+	revenueStr := fmt.Sprintf("%.2f", totalRevenue)
+	if plan.Status.TotalRevenue != revenueStr {
+		plan.Status.TotalRevenue = revenueStr
+		updated = true
+	}
+
+	// Устанавливаем условие Available
+	if activeCount > 0 {
+		meta.SetStatusCondition(&plan.Status.Conditions, metav1.Condition{
+			Type:    "Available",
+			Status:  metav1.ConditionTrue,
+			Reason:  "HasActiveSubscriptions",
+			Message: fmt.Sprintf("Plan has %d active subscriptions", activeCount),
+		})
+	} else {
+		meta.SetStatusCondition(&plan.Status.Conditions, metav1.Condition{
+			Type:    "Available",
+			Status:  metav1.ConditionTrue,
+			Reason:  "NoActiveSubscriptions",
+			Message: "Plan has no active subscriptions",
+		})
+	}
+
+	if updated {
+		return r.Status().Update(ctx, plan)
+	}
+
+	return nil
 }
 
 // getBillingInterval returns the billing interval from the plan spec.

@@ -69,7 +69,15 @@ type BillingPlanStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	// Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// activeSubscriptions is the number of active subscriptions using this plan
+	// +optional
+	ActiveSubscriptions int32 `json:"activeSubscriptions,omitempty"`
+
+	// totalRevenue is the total revenue generated from this plan (in cents/smallest currency unit)
+	// +optional
+	TotalRevenue string `json:"totalRevenue,omitempty"`
 }
 
 // +kubebuilder:object:root=true
