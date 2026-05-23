@@ -40,12 +40,21 @@ spec:
             description: spec defines the desired state of BillingPlan
             properties:
               billingPeriod:
+                description: BillingPeriod is the billing period (e.g., hourly, daily,
+                  weekly, monthly, yearly, or custom like 30d)
                 type: string
               currency:
+                description: Currency is the currency code (e.g., USD, EUR, RUB)
+                enum:
+                - USD
+                - EUR
+                - RUB
+                - KZT
                 type: string
               limits:
                 additionalProperties:
                   type: integer
+                description: Limits define resource limits for this billing plan
                 type: object
               price:
                 description: |-
@@ -53,6 +62,13 @@ spec:
                   Foo *string `json:"foo,omitempty"`
                 pattern: ^\d+(\.\d{1,2})?$
                 type: string
+              requeueIntervalSeconds:
+                default: 30
+                description: |-
+                  RequeueIntervalSeconds is the interval between billing cycles in seconds.
+                  Default is 30 seconds for testing. Set to 2592000 for monthly billing (30 days).
+                minimum: 1
+                type: integer
             required:
             - billingPeriod
             - currency

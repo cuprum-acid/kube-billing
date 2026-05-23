@@ -146,16 +146,19 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 		now := metav1.Now()
 
+		// Получаем интервал биллинга из плана (по умолчанию 30 секунд для тестирования)
+		billingInterval := getBillingInterval(plan.Spec.RequeueIntervalSeconds)
+
 		sub.Status.State = "Active"
 		sub.Status.LastPayment = now
-		sub.Status.NextBilling = metav1.NewTime(now.Add(30 * 24 * time.Hour))
+		sub.Status.NextBilling = metav1.NewTime(now.Add(billingInterval))
 		sub.Status.ObservedGeneration = sub.Generation
 
 		if err := r.Status().Update(ctx, &sub); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{RequeueAfter: 30 * 24 * time.Hour}, nil
+		return ctrl.Result{RequeueAfter: billingInterval}, nil
 	}
 
 	// ==============================
@@ -184,16 +187,17 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// здесь будет реальный платежный gateway
 			// сейчас просто симулируем
 
+			// Получаем интервал биллинга из плана (по умолчанию 30 секунд для тестирования)
+			billingInterval := getBillingInterval(plan.Spec.RequeueIntervalSeconds)
+
 			sub.Status.LastPayment = metav1.Now()
-			sub.Status.NextBilling = metav1.NewTime(now.Add(30 * 24 * time.Hour))
+			sub.Status.NextBilling = metav1.NewTime(now.Add(billingInterval))
 
 			if err := r.Status().Update(ctx2, &sub); err != nil {
 				return ctrl.Result{}, err
 			}
 
-			// Пока замени: 30 * 24 * time.Hour на 30 * time.Second
-			// Тогда будет: billing каждые 30 секунд
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			return ctrl.Result{RequeueAfter: billingInterval}, nil
 		}
 
 		wait := time.Until(sub.Status.NextBilling.Time)
@@ -256,4 +260,14 @@ func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj
 	defer span.End()
 
 	return requests
+}
+
+// getBillingInterval returns the billing interval from the plan spec.
+// If not specified, defaults to 30 seconds for testing purposes.
+// For production, set to 2592000 (30 days) for monthly billing.
+func getBillingInterval(intervalSeconds int) time.Duration {
+	if intervalSeconds <= 0 {
+		return 30 * time.Second // default for testing
+	}
+	return time.Duration(intervalSeconds) * time.Second
 }

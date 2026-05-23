@@ -34,10 +34,19 @@ type BillingPlanSpec struct {
 	// +optional
 	// Foo *string `json:"foo,omitempty"`
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d{1,2})?$`
-	Price         string         `json:"price"`
-	Currency      string         `json:"currency"`
-	BillingPeriod string         `json:"billingPeriod"`
-	Limits        map[string]int `json:"limits,omitempty"`
+	Price string `json:"price"`
+	// Currency is the currency code (e.g., USD, EUR, RUB)
+	// +kubebuilder:validation:Enum=USD;EUR;RUB;KZT
+	Currency string `json:"currency"`
+	// BillingPeriod is the billing period (e.g., hourly, daily, weekly, monthly, yearly, or custom like 30d)
+	BillingPeriod string `json:"billingPeriod"`
+	// Limits define resource limits for this billing plan
+	Limits map[string]int `json:"limits,omitempty"`
+	// RequeueIntervalSeconds is the interval between billing cycles in seconds.
+	// Default is 30 seconds for testing. Set to 2592000 for monthly billing (30 days).
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=30
+	RequeueIntervalSeconds int `json:"requeueIntervalSeconds,omitempty"`
 }
 
 // BillingPlanStatus defines the observed state of BillingPlan.

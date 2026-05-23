@@ -8,3 +8,4 @@ spec:
   billingPeriod: monthly
   limits:
     apiCalls: 10000
+  requeueIntervalSeconds: 30
