@@ -79,6 +79,11 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 			log.Info("Running final billing before deletion")
 
+			// Декомент метрики активной подписки
+			if sub.Status.State == "Active" {
+				ActiveSubscriptions.Dec()
+			}
+
 			// здесь будет финальный биллинг
 			// например списание последнего платежа
 

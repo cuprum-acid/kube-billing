@@ -5,6 +5,6 @@ metadata:
 spec:
   price: "10.00"
   currency: USD
-  billingPeriod: 30d
+  billingPeriod: monthly
   limits:
     apiCalls: 10000
