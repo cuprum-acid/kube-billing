@@ -65,7 +65,6 @@ spec:
           - --health-probe-bind-address=:8081
         image: controller:latest
         name: manager
-        ports: []
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
@@ -84,18 +83,23 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        # TODO(user): Configure the resources accordingly based on the project requirements.
-        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        # Production resource limits
+        # Adjust based on actual usage patterns
         resources:
           limits:
             cpu: 500m
-            memory: 128Mi
+            memory: 256Mi
           requests:
-            cpu: 10m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
         env:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "localhost:4318"
+        # Metrics port for Prometheus scraping
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
         volumeMounts: []
       volumes: []
       serviceAccountName: controller-manager
