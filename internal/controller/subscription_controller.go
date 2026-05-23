@@ -18,11 +18,13 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -39,7 +41,8 @@ const SubscriptionFinalizer = "billing.cloud-native.io/finalizer"
 // SubscriptionReconciler reconciles a Subscription object
 type SubscriptionReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=billing.cloud-native.io,resources=subscriptions,verbs=get;list;watch;create;update;patch;delete
@@ -176,7 +179,23 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			price, err := strconv.ParseFloat(plan.Spec.Price, 64)
 			if err != nil {
 				log.Error(err, "Failed to parse plan price", "price", plan.Spec.Price)
-				return ctrl.Result{}, err
+
+				// Инкремент метрики неудачных платежей
+				PaymentFailures.Inc()
+
+				// Перевод подписки в статус ошибки
+				sub.Status.State = "PaymentError"
+				sub.Status.ObservedGeneration = sub.Generation
+				if err := r.Status().Update(ctx, &sub); err != nil {
+					return ctrl.Result{}, err
+				}
+
+				// Генерация события
+				r.Recorder.Event(&sub, "Warning", "PaymentFailed",
+					fmt.Sprintf("Failed to process payment: %v", err))
+
+				// Повторная попытка через 5 минут
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}
 
 			ctx2, paymentSpan := Tracer.Start(ctx, "ProcessPayment")
@@ -196,6 +215,10 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			if err := r.Status().Update(ctx2, &sub); err != nil {
 				return ctrl.Result{}, err
 			}
+
+			// Генерация события об успешном платеже
+			r.Recorder.Event(&sub, "Normal", "PaymentProcessed",
+				fmt.Sprintf("Payment of %s %s processed successfully", plan.Spec.Price, plan.Spec.Currency))
 
 			return ctrl.Result{RequeueAfter: billingInterval}, nil
 		}

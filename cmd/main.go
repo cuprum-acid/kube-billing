@@ -183,8 +183,9 @@ func main() {
 	}
 
 	if err := (&controller.SubscriptionReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("kube-billing"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Subscription")
 		os.Exit(1)
