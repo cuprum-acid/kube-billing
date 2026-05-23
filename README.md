@@ -1,8 +1,128 @@
 # kube-billing
-A Kubernetes operator for managing billing plans and subscriptions.
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Go Report Card](https://goreportcard.com/badge/github.com/example/kube-billing)](https://goreportcard.com/report/github.com/example/kube-billing)
+
+A Kubernetes operator for managing billing plans and subscriptions using Custom Resource Definitions (CRDs).
 
 ## Description
-kube-billing provides `BillingPlan` and `Subscription` Custom Resource Definitions (CRDs) to natively manage tenant billing configurations within a Kubernetes cluster.
+
+kube-billing provides native Kubernetes resources for managing tenant billing:
+
+- **BillingPlan**: Define pricing tiers with configurable billing cycles
+- **Subscription**: Link users to billing plans with automatic payment processing
+
+Features:
+- ✅ Automatic recurring billing with configurable intervals
+- ✅ Pro-rated refunds on subscription cancellation
+- ✅ Prometheus metrics for monitoring (active subscriptions, revenue, failures)
+- ✅ OpenTelemetry tracing for debugging
+- ✅ Kubernetes Events for audit trail
+- ✅ Status Conditions for real-time state visibility
+- ✅ Production-ready deployment (HPA, PDB, resource limits)
+
+## API Reference
+
+### BillingPlan
+
+Defines a billing plan with pricing and billing cycle configuration.
+
+```yaml
+apiVersion: billing.cloud-native.io/v1alpha1
+kind: BillingPlan
+metadata:
+  name: pro-plan
+  namespace: default
+spec:
+  price: "19.99"              # Required: decimal with up to 2 places
+  currency: USD               # Required: USD|EUR|RUB|KZT|GBP|JPY|CNY
+  billingPeriod: monthly      # Required: hourly|daily|weekly|monthly|yearly
+  requeueIntervalSeconds: 30  # Optional: billing cycle in seconds (default: 30)
+  limits:                     # Optional: resource limits
+    apiCalls: 10000
+    storage: 10737418240
+status:
+  activeSubscriptions: 5      # Number of active subscriptions
+  totalRevenue: "99.95"       # Total revenue generated
+  conditions:
+  - type: Available
+    status: "True"
+    reason: HasActiveSubscriptions
+    message: "Plan has 5 active subscriptions"
+    lastTransitionTime: "2026-05-23T10:00:00Z"
+```
+
+### Subscription
+
+Links a user to a billing plan and tracks payment status.
+
+```yaml
+apiVersion: billing.cloud-native.io/v1alpha1
+kind: Subscription
+metadata:
+  name: user-123-sub
+  namespace: default
+spec:
+  userId: user-123            # Required: alphanumeric, _, - (max 256 chars)
+  planRef: pro-plan           # Required: reference to BillingPlan name
+status:
+  state: Active               # Active|PaymentError|Error
+  lastPayment: "2026-05-23T10:00:00Z"
+  nextBilling: "2026-06-22T10:00:00Z"
+  observedGeneration: 1
+  conditions:
+  - type: Active
+    status: "True"
+    reason: PaymentProcessed
+    message: "Payment processed successfully"
+    lastTransitionTime: "2026-05-23T10:00:00Z"
+  - type: BillingPlanNotFound
+    status: "False"
+    reason: BillingPlanFound
+    message: "Referenced BillingPlan exists"
+    lastTransitionTime: "2026-05-23T10:00:00Z"
+  - type: PaymentError
+    status: "False"
+    reason: PaymentSuccess
+    message: "Last payment was successful"
+    lastTransitionTime: "2026-05-23T10:00:00Z"
+```
+
+## Validation Rules
+
+### BillingPlan
+| Field | Validation |
+|-------|------------|
+| `price` | Pattern: `^\d+(\.\d{1,2})?$`, Length: 1-20 |
+| `currency` | Enum: USD, EUR, RUB, KZT, GBP, JPY, CNY |
+| `billingPeriod` | Enum: hourly, daily, weekly, monthly, yearly |
+| `requeueIntervalSeconds` | Range: 1 - 31536000 (1 year) |
+
+### Subscription
+| Field | Validation |
+|-------|------------|
+| `userId` | Pattern: `^[a-zA-Z0-9_-]+$`, Length: 1-256 |
+| `planRef` | Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, Length: 1-253 |
+
+## Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `billing_active_subscriptions` | Gauge | Current number of active subscriptions |
+| `billing_revenue_total` | Counter | Total revenue processed |
+| `billing_payment_failures` | Counter | Number of failed payment attempts |
+
+Prometheus endpoint: `:8080/metrics`
+
+## Events
+
+The controller emits Kubernetes Events for auditing:
+
+| Event Type | Reason | Description |
+|------------|--------|-------------|
+| Normal | PaymentProcessed | Successful payment processed |
+| Warning | PaymentFailed | Payment processing failed |
+| Normal | FinalBilling | Pro-rated refund calculated on deletion |
 
 ## Getting Started
 
