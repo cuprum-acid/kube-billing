@@ -40,14 +40,20 @@ spec:
             description: spec defines the desired state of Subscription
             properties:
               planRef:
+                description: PlanRef is the name of the BillingPlan to use
+                maxLength: 253
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
               userId:
-                description: |-
-                  foo is an example field of Subscription. Edit subscription_types.go to remove/update
-                  Foo *string `json:"foo,omitempty"`
+                description: UserID is the unique identifier of the user
+                maxLength: 256
+                minLength: 1
+                pattern: ^[a-zA-Z0-9_-]+$
                 type: string
             required:
             - planRef
+            - userId
             type: object
           status:
             description: status defines the observed state of Subscription

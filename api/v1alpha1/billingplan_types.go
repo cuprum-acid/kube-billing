@@ -30,22 +30,33 @@ type BillingPlanSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of BillingPlan. Edit billingplan_types.go to remove/update
-	// +optional
-	// Foo *string `json:"foo,omitempty"`
+	// Price is the price amount (e.g., "19.99")
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d{1,2})?$`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=20
+	// +required
 	Price string `json:"price"`
+
 	// Currency is the currency code (e.g., USD, EUR, RUB)
-	// +kubebuilder:validation:Enum=USD;EUR;RUB;KZT
+	// +kubebuilder:validation:Enum=USD;EUR;RUB;KZT;GBP;JPY;CNY
+	// +required
 	Currency string `json:"currency"`
-	// BillingPeriod is the billing period (e.g., hourly, daily, weekly, monthly, yearly, or custom like 30d)
+
+	// BillingPeriod is the billing period (e.g., hourly, daily, weekly, monthly, yearly)
+	// +kubebuilder:validation:Enum=hourly;daily;weekly;monthly;yearly
+	// +required
 	BillingPeriod string `json:"billingPeriod"`
+
 	// Limits define resource limits for this billing plan
+	// +optional
 	Limits map[string]int `json:"limits,omitempty"`
+
 	// RequeueIntervalSeconds is the interval between billing cycles in seconds.
 	// Default is 30 seconds for testing. Set to 2592000 for monthly billing (30 days).
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=31536000
 	// +kubebuilder:default=30
+	// +optional
 	RequeueIntervalSeconds int `json:"requeueIntervalSeconds,omitempty"`
 }
 

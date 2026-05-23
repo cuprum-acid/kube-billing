@@ -40,10 +40,18 @@ type SubscriptionSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of Subscription. Edit subscription_types.go to remove/update
-	// +optional
-	// Foo *string `json:"foo,omitempty"`
-	UserID  string `json:"userId"`
+	// UserID is the unique identifier of the user
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_-]+$`
+	// +required
+	UserID string `json:"userId"`
+
+	// PlanRef is the name of the BillingPlan to use
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +required
 	PlanRef string `json:"planRef"`
 }
 

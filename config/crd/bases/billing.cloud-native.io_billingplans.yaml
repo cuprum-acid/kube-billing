@@ -41,7 +41,13 @@ spec:
             properties:
               billingPeriod:
                 description: BillingPeriod is the billing period (e.g., hourly, daily,
-                  weekly, monthly, yearly, or custom like 30d)
+                  weekly, monthly, yearly)
+                enum:
+                - hourly
+                - daily
+                - weekly
+                - monthly
+                - yearly
                 type: string
               currency:
                 description: Currency is the currency code (e.g., USD, EUR, RUB)
@@ -50,6 +56,9 @@ spec:
                 - EUR
                 - RUB
                 - KZT
+                - GBP
+                - JPY
+                - CNY
                 type: string
               limits:
                 additionalProperties:
@@ -57,9 +66,9 @@ spec:
                 description: Limits define resource limits for this billing plan
                 type: object
               price:
-                description: |-
-                  foo is an example field of BillingPlan. Edit billingplan_types.go to remove/update
-                  Foo *string `json:"foo,omitempty"`
+                description: Price is the price amount (e.g., "19.99")
+                maxLength: 20
+                minLength: 1
                 pattern: ^\d+(\.\d{1,2})?$
                 type: string
               requeueIntervalSeconds:
@@ -67,11 +76,13 @@ spec:
                 description: |-
                   RequeueIntervalSeconds is the interval between billing cycles in seconds.
                   Default is 30 seconds for testing. Set to 2592000 for monthly billing (30 days).
+                maximum: 31536000
                 minimum: 1
                 type: integer
             required:
             - billingPeriod
             - currency
+            - price
             type: object
           status:
             description: status defines the observed state of BillingPlan
