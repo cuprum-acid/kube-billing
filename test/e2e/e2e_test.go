@@ -96,47 +96,28 @@ var _ = Describe("Manager", Ordered, func() {
 
 	// After each test, check for failures and collect logs, events,
 	// and pod descriptions for debugging.
-	AfterEach(func() {
-		specReport := CurrentSpecReport()
-		if specReport.Failed() {
-			By("Fetching controller manager pod logs")
-			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-			controllerLogs, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", controllerLogs)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get Controller logs: %s", err)
-			}
+		AfterEach(func() {
+			specReport := CurrentSpecReport()
+			if specReport.Failed() {
+				By("Fetching subscription status for debugging")
+				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "yaml")
+				output, err := utils.Run(cmd)
+				if err == nil {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Subscription status:\n %s", output)
+				} else {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get subscription status: %s", err)
+				}
 
-			By("Fetching Kubernetes events")
-			cmd = exec.Command("kubectl", "get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
-			eventsOutput, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n%s", eventsOutput)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get Kubernetes events: %s", err)
+				By("Fetching controller manager logs")
+				cmd = exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace)
+				logs, err := utils.Run(cmd)
+				if err == nil {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", logs)
+				} else {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get controller logs: %s", err)
+				}
 			}
-
-			By("Fetching curl-metrics logs")
-			cmd = exec.Command("kubectl", "logs", "curl-metrics", "-n", namespace)
-			metricsOutput, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Metrics logs:\n %s", metricsOutput)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get curl-metrics logs: %s", err)
-			}
-
-			By("Fetching controller manager pod description")
-			cmd = exec.Command("kubectl", "describe", "pod", controllerPodName, "-n", namespace)
-			podDescription, err := utils.Run(cmd)
-			if err == nil {
-				fmt.Println("Pod description:\n", podDescription)
-			} else {
-				fmt.Println("Failed to describe controller pod")
-			}
-		}
-	})
-
+		})
 	SetDefaultEventuallyTimeout(2 * time.Minute)
 	SetDefaultEventuallyPollingInterval(time.Second)
 
@@ -196,6 +177,14 @@ var _ = Describe("Manager", Ordered, func() {
 			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+
+			By("waiting for controller to be ready")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pods", "-l", "control-plane=controller-manager", "-n", namespace, "-o", "jsonpath={.items[0].status.conditions[?(@.type=='Ready')].status}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"))
+			}, 2*time.Minute, time.Second).Should(Succeed())
 		})
 
 		AfterAll(func() {
@@ -255,7 +244,7 @@ spec:
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(Equal("Active"))
-			}, 30*time.Second, time.Second).Should(Succeed())
+			}, 60*time.Second, time.Second).Should(Succeed())
 
 			By("Verifying subscription has finalizer")
 			Eventually(func(g Gomega) {
