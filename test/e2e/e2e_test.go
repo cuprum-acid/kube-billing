@@ -94,30 +94,6 @@ var _ = Describe("Manager", Ordered, func() {
 		_, _ = utils.Run(cmd)
 	})
 
-	// After each test, check for failures and collect logs, events,
-	// and pod descriptions for debugging.
-		AfterEach(func() {
-			specReport := CurrentSpecReport()
-			if specReport.Failed() {
-				By("Fetching subscription status for debugging")
-				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "yaml")
-				output, err := utils.Run(cmd)
-				if err == nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Subscription status:\n %s", output)
-				} else {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get subscription status: %s", err)
-				}
-
-				By("Fetching controller manager logs")
-				cmd = exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace)
-				logs, err := utils.Run(cmd)
-				if err == nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", logs)
-				} else {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get controller logs: %s", err)
-				}
-			}
-		})
 	SetDefaultEventuallyTimeout(2 * time.Minute)
 	SetDefaultEventuallyPollingInterval(time.Second)
 
@@ -191,6 +167,29 @@ var _ = Describe("Manager", Ordered, func() {
 			By("deleting test namespace")
 			cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found=true")
 			_, _ = utils.Run(cmd)
+		})
+
+		AfterEach(func() {
+			specReport := CurrentSpecReport()
+			if specReport.Failed() {
+				By("Fetching subscription status for debugging")
+				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "yaml")
+				output, err := utils.Run(cmd)
+				if err == nil {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Subscription status:\n %s", output)
+				} else {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get subscription status: %s", err)
+				}
+
+				By("Fetching controller manager logs")
+				cmd = exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace)
+				logs, err := utils.Run(cmd)
+				if err == nil {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", logs)
+				} else {
+					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get controller logs: %s", err)
+				}
+			}
 		})
 
 		It("should create BillingPlan and Subscription, then process billing", func() {
