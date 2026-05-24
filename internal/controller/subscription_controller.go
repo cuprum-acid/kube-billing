@@ -37,6 +37,16 @@ import (
 	billingv1alpha1 "github.com/example/kube-billing/api/v1alpha1"
 )
 
+// Subscription state constants
+const (
+	// SubscriptionStateActive indicates active subscription state
+	SubscriptionStateActive string = "Active"
+	// SubscriptionStatePaymentError indicates payment error state
+	SubscriptionStatePaymentError string = "PaymentError"
+	// SubscriptionStateError indicates general error state
+	SubscriptionStateError string = "Error"
+)
+
 const SubscriptionFinalizer = "billing.cloud-native.io/finalizer"
 
 // SubscriptionReconciler reconciles a Subscription object
@@ -64,27 +74,27 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	ctx, span := Tracer.Start(ctx, "ReconcileSubscription")
 	defer span.End()
 
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	var sub billingv1alpha1.Subscription
 	if err := r.Get(ctx, req.NamespacedName, &sub); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	log.Info("Reconciling subscription", "name", sub.Name)
+	logger.Info("Reconciling subscription", "name", sub.Name)
 
 	// ==============================
 	// HANDLE DELETION
 	// ==============================
 
-	if !sub.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !sub.DeletionTimestamp.IsZero() {
 
 		if controllerutil.ContainsFinalizer(&sub, SubscriptionFinalizer) {
 
-			log.Info("Running final billing before deletion")
+			logger.Info("Running final billing before deletion")
 
 			// Декомент метрики активной подписки
-			if sub.Status.State == "Active" {
+			if sub.Status.State == SubscriptionStateActive {
 				ActiveSubscriptions.Dec()
 			}
 
@@ -96,9 +106,10 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				if !sub.Status.NextBilling.IsZero() {
 					// Считаем пропорциональную сумму за неиспользованные дни
 					now := time.Now()
-					if now.Before(sub.Status.NextBilling.Time) {
+					nextBillingTime := sub.Status.NextBilling.Time
+					if now.Before(nextBillingTime) {
 						// Ещё не наступил следующий период — считаем пропорционально
-						remainingTime := sub.Status.NextBilling.Time.Sub(now)
+						remainingTime := nextBillingTime.Sub(now)
 						totalPeriod := time.Duration(plan.Spec.RequeueIntervalSeconds) * time.Second
 
 						if totalPeriod > 0 && remainingTime > 0 {
@@ -108,7 +119,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 								refundAmount := price * (remainingTime.Seconds() / totalPeriod.Seconds())
 
 								if refundAmount > 0 {
-									log.Info("Final billing: calculating refund",
+									logger.Info("Final billing: calculating refund",
 										"amount", fmt.Sprintf("%.2f", refundAmount),
 										"remainingTime", remainingTime.String())
 
@@ -168,9 +179,9 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		&plan,
 	); err != nil {
 
-		log.Error(err, "BillingPlan not found")
+		logger.Error(err, "BillingPlan not found")
 
-		sub.Status.State = "Error"
+		sub.Status.State = SubscriptionStateError
 
 		// Инкремент метрики неудачных платежей (план не найден)
 		PaymentFailures.Inc()
@@ -194,7 +205,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if sub.Status.State == "" {
 
-		log.Info("Activating subscription")
+		logger.Info("Activating subscription")
 
 		ActiveSubscriptions.Inc()
 
@@ -203,7 +214,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		// Получаем интервал биллинга из плана (по умолчанию 30 секунд для тестирования)
 		billingInterval := getBillingInterval(plan.Spec.RequeueIntervalSeconds)
 
-		sub.Status.State = "Active"
+		sub.Status.State = SubscriptionStateActive
 		sub.Status.LastPayment = now
 		sub.Status.NextBilling = metav1.NewTime(now.Add(billingInterval))
 		sub.Status.ObservedGeneration = sub.Generation
@@ -238,23 +249,23 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// PERIODIC BILLING
 	// ==============================
 
-	if sub.Status.State == "Active" {
+	if sub.Status.State == SubscriptionStateActive {
 
 		now := time.Now()
 
 		if !sub.Status.NextBilling.IsZero() && now.After(sub.Status.NextBilling.Time) {
 
-			log.Info("Processing recurring payment", "subscription", sub.Name)
+			logger.Info("Processing recurring payment", "subscription", sub.Name)
 
 			price, err := strconv.ParseFloat(plan.Spec.Price, 64)
 			if err != nil {
-				log.Error(err, "Failed to parse plan price", "price", plan.Spec.Price)
+				logger.Error(err, "Failed to parse plan price", "price", plan.Spec.Price)
 
 				// Инкремент метрики неудачных платежей (ошибка парсинга цены)
 				PaymentFailures.Inc()
 
 				// Перевод подписки в статус ошибки
-				sub.Status.State = "PaymentError"
+				sub.Status.State = SubscriptionStatePaymentError
 				sub.Status.ObservedGeneration = sub.Generation
 
 				// Устанавливаем условие PaymentError
@@ -321,7 +332,7 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 		wait := time.Until(sub.Status.NextBilling.Time)
 
-		log.Info("Next billing scheduled", "after", wait)
+		logger.Info("Next billing scheduled", "after", wait)
 
 		return ctrl.Result{RequeueAfter: wait}, nil
 	}
@@ -343,14 +354,14 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj client.Object) []reconcile.Request {
 
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	plan := obj.(*billingv1alpha1.BillingPlan)
 
 	var subs billingv1alpha1.SubscriptionList
 
 	if err := r.List(ctx, &subs, client.InNamespace(plan.Namespace)); err != nil {
-		log.Error(err, "unable to list subscriptions")
+		logger.Error(err, "unable to list subscriptions")
 		return nil
 	}
 
@@ -370,12 +381,12 @@ func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj
 		}
 	}
 
-	log.Info("BillingPlan change detected",
+	logger.Info("BillingPlan change detected",
 		"plan", plan.Name,
 		"affectedSubscriptions", len(requests),
 	)
 
-	ctx, span := Tracer.Start(ctx, "MapPlanToSubscriptions")
+	_, span := Tracer.Start(ctx, "MapPlanToSubscriptions")
 	defer span.End()
 
 	return requests

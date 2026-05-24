@@ -45,6 +45,11 @@ linters:
           - dupl
           - lll
         path: internal/*
+      - linters:
+          - staticcheck
+          - SA1019
+        path: cmd/main.go
+        text: "GetEventRecorderFor is deprecated"
     paths:
       - third_party$
       - builtin$
