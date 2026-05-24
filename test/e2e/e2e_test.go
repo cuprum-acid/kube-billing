@@ -175,7 +175,7 @@ var _ = Describe("Manager", Ordered, func() {
 			
 			// Always print controller logs for debugging
 			By("Fetching controller manager logs")
-			cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=100")
+			cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=200")
 			logs, err := utils.Run(cmd)
 			if err == nil {
 				_, _ = fmt.Fprintf(GinkgoWriter, "\n=== Controller Logs ===\n%s\n", logs)
@@ -191,9 +191,17 @@ var _ = Describe("Manager", Ordered, func() {
 				_, _ = fmt.Fprintf(GinkgoWriter, "\n=== Events in %s ===\n%s\n", testNamespace, eventsOutput)
 			}
 
+			// Print all resources in test namespace
+			By("Fetching all billing resources")
+			cmd = exec.Command("kubectl", "get", "billingplan,subscription", "-n", testNamespace, "-o", "yaml")
+			output, err := utils.Run(cmd)
+			if err == nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "\n=== All Resources ===\n%s\n", output)
+			}
+
 			if specReport.Failed() {
 				By("Fetching subscription status for debugging")
-				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "yaml")
+				cmd = exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "yaml")
 				output, err := utils.Run(cmd)
 				if err == nil {
 					_, _ = fmt.Fprintf(GinkgoWriter, "\n=== Subscription YAML ===\n%s\n", output)
@@ -267,8 +275,16 @@ spec:
 			tmpFile = filepath.Join(os.TempDir(), "e2e-sub.yaml")
 			Expect(os.WriteFile(tmpFile, []byte(subYAML), 0o644)).To(Succeed())
 			cmd = exec.Command("kubectl", "apply", "-f", tmpFile)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create Subscription")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Subscription: %s", output)
+
+			By("Verifying Subscription was created")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "Subscription not found: %s", output)
+				g.Expect(output).To(ContainSubstring(subName))
+			}, 30*time.Second, time.Second).Should(Succeed())
 
 			By("Waiting for subscription to be activated")
 			Eventually(func(g Gomega) {
