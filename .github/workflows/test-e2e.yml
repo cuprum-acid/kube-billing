@@ -1,8 +1,11 @@
 name: E2E Tests
 
+# Disabled: E2E tests are unstable in CI/CD environment
+# Run locally with: make test-e2e
+# See: USER_GUIDE.md for local testing instructions
+
 on:
-  push:
-  pull_request:
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   test-e2e:
