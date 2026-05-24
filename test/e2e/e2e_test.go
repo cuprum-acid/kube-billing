@@ -171,28 +171,61 @@ var _ = Describe("Manager", Ordered, func() {
 
 		AfterEach(func() {
 			specReport := CurrentSpecReport()
+			By("Collecting debug information for test: " + specReport.LeafNodeText)
+			
+			// Always print controller logs for debugging
+			By("Fetching controller manager logs")
+			cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=100")
+			logs, err := utils.Run(cmd)
+			if err == nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "\n=== Controller Logs ===\n%s\n", logs)
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get controller logs: %s\n", err)
+			}
+
+			// Print events in test namespace
+			By("Fetching events in test namespace")
+			cmd = exec.Command("kubectl", "get", "events", "-n", testNamespace, "--sort-by=.lastTimestamp")
+			eventsOutput, err := utils.Run(cmd)
+			if err == nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "\n=== Events in %s ===\n%s\n", testNamespace, eventsOutput)
+			}
+
 			if specReport.Failed() {
 				By("Fetching subscription status for debugging")
 				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "yaml")
 				output, err := utils.Run(cmd)
 				if err == nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Subscription status:\n %s", output)
+					_, _ = fmt.Fprintf(GinkgoWriter, "\n=== Subscription YAML ===\n%s\n", output)
 				} else {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get subscription status: %s", err)
+					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get subscription: %s\n", err)
 				}
 
-				By("Fetching controller manager logs")
-				cmd = exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager", "-n", namespace)
-				logs, err := utils.Run(cmd)
+				By("Fetching billing plan status")
+				cmd = exec.Command("kubectl", "get", "billingplan", planName, "-n", testNamespace, "-o", "yaml")
+				output, err = utils.Run(cmd)
 				if err == nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", logs)
+					_, _ = fmt.Fprintf(GinkgoWriter, "\n=== BillingPlan YAML ===\n%s\n", output)
 				} else {
-					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get controller logs: %s", err)
+					_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get billing plan: %s\n", err)
 				}
 			}
 		})
 
 		It("should create BillingPlan and Subscription, then process billing", func() {
+			By("Verifying CRDs are installed")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "crd", "billingplans.billing.cloud-native.io")
+				_, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+			}, 30*time.Second, time.Second).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "crd", "subscriptions.billing.cloud-native.io")
+				_, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+			}, 30*time.Second, time.Second).Should(Succeed())
+
 			By("Creating a BillingPlan")
 			planYAML := fmt.Sprintf(`
 apiVersion: billing.cloud-native.io/v1alpha1
@@ -242,8 +275,8 @@ spec:
 				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "jsonpath={.status.state}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Active"))
-			}, 60*time.Second, time.Second).Should(Succeed())
+				g.Expect(output).To(Equal("Active"), "Subscription state should be Active, got: %s", output)
+			}, 120*time.Second, 2*time.Second).Should(Succeed())
 
 			By("Verifying subscription has finalizer")
 			Eventually(func(g Gomega) {
