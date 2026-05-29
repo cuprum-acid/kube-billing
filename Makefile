@@ -108,6 +108,13 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: bench
+bench: ## Run the reconcile-driven load harness against the current KUBECONFIG cluster.
+	@echo "Requires a reachable cluster with CRDs installed, the controller running, and a 'basic' BillingPlan."
+	@mkdir -p bench/results
+	go run ./bench -n 200 -c 50 -plan basic -ns default \
+		-out bench/results/activate.csv
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go --metrics-bind-address=:8080 --metrics-secure=false

@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,9 +119,15 @@ func getFirstFoundEnvTestBinaryDir() string {
 	return ""
 }
 
-// RandomInt returns a random integer in the range [0, max).
+// RandomInt returns a uniformly random integer in the range [0, max).
 // Used for generating unique test resource names.
 func RandomInt(max int) int {
-	seed := time.Now().UnixNano()
-	return int(seed % int64(max))
+	if max <= 0 {
+		return 0
+	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return int(time.Now().UnixNano() % int64(max))
+	}
+	return int(binary.LittleEndian.Uint64(b[:]) % uint64(max))
 }

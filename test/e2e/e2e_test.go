@@ -296,14 +296,14 @@ spec:
 
 			By("Verifying subscription has finalizer")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "jsonpath={.spec.finalizers}")
+				cmd := exec.Command("kubectl", "get", "subscription", subName, "-n", testNamespace, "-o", "jsonpath={.metadata.finalizers}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("billing.cloud-native.io/finalizer"))
 			}, 10*time.Second, time.Second).Should(Succeed())
 
 			By("Waiting for billing cycle to complete")
-			// Ждём 35 секунд чтобы billing цикл сработал (интервал 30 секунд)
+			// Wait 35 seconds for one billing cycle to fire (interval is 30 seconds)
 			time.Sleep(35 * time.Second)
 
 			By("Verifying payment was processed")
@@ -315,13 +315,13 @@ spec:
 			}, 10*time.Second, time.Second).Should(Succeed())
 
 			By("Verifying metrics show active subscription")
-			// Получаем метрики через kubectl port-forward
+			// Retrieve metrics via the in-pod metrics endpoint
 			cmd = exec.Command("kubectl", "get", "pods", "-n", namespace, "-l", "control-plane=controller-manager", "-o", "jsonpath={.items[0].metadata.name}")
 			podName, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			podName = utils.GetNonEmptyLines(podName)[0]
 
-			// Используем kubectl exec для получения метрик
+			// Use kubectl exec to scrape the metrics endpoint
 			cmd = exec.Command("kubectl", "exec", podName, "-n", namespace, "--", "wget", "-qO-", "localhost:8080/metrics")
 			metricsOutput, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())

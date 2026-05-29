@@ -48,7 +48,6 @@ var _ = Describe("Subscription Controller", func() {
 		planName = "test-plan-" + randomString()
 		subName = "test-sub-" + randomString()
 
-		// Создаём тестовый BillingPlan
 		plan = &billingv1alpha1.BillingPlan{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      planName,
@@ -65,11 +64,9 @@ var _ = Describe("Subscription Controller", func() {
 	})
 
 	AfterEach(func() {
-		// Удаляем Subscription если существует
 		if sub != nil {
 			_ = k8sClient.Delete(ctx, sub)
 		}
-		// Удаляем BillingPlan
 		_ = k8sClient.Delete(ctx, plan)
 	})
 
@@ -95,7 +92,7 @@ var _ = Describe("Subscription Controller", func() {
 				Recorder: record.NewFakeRecorder(100),
 			}
 
-			// Первая реконсиляция — добавление finalizer
+			// First reconcile: add finalizer
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      subName,
@@ -103,7 +100,7 @@ var _ = Describe("Subscription Controller", func() {
 				},
 			})
 
-			// Вторая реконсиляция — активация
+			// Second reconcile: activation
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      subName,
@@ -175,11 +172,11 @@ var _ = Describe("Subscription Controller", func() {
 				Scheme:   k8sClient.Scheme(),
 				Recorder: record.NewFakeRecorder(100),
 			}
-			// Первая реконсиляция — добавление finalizer
+			// First reconcile: add finalizer
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: subNameNotFound, Namespace: namespace},
 			})
-			// Вторая реконсиляция — проверка плана и установка Error
+			// Second reconcile: plan lookup -> Error state
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: subNameNotFound, Namespace: namespace},
 			})
@@ -216,12 +213,12 @@ var _ = Describe("Subscription Controller", func() {
 				Recorder: record.NewFakeRecorder(100),
 			}
 
-			// Первая реконсиляция — добавление finalizer
+			// First reconcile: add finalizer
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: subNameBilling, Namespace: namespace},
 			})
 
-			// Вторая реконсиляция — активация
+			// Second reconcile: activation
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: subNameBilling, Namespace: namespace},
 			})
@@ -234,7 +231,7 @@ var _ = Describe("Subscription Controller", func() {
 			}, time.Second*10, time.Millisecond*500).Should(Succeed())
 
 			By("Simulating time passage by updating NextBilling to the past")
-			// Обновляем NextBilling на время в прошлом чтобы триггерить биллинг
+			// Push NextBilling into the past to trigger an immediate billing cycle
 			updatedSub := &billingv1alpha1.Subscription{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: subNameBilling, Namespace: namespace}, updatedSub)).To(Succeed())
 			updatedSub.Status.NextBilling = metav1.NewTime(time.Now().Add(-1 * time.Hour))
@@ -326,12 +323,12 @@ var _ = Describe("Subscription Controller", func() {
 				Recorder: record.NewFakeRecorder(100),
 			}
 
-			// Первая реконсиляция — добавление finalizer
+			// First reconcile: add finalizer
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: subNamePlanChange, Namespace: namespace},
 			})
 
-			// Вторая реконсиляция — активация
+			// Second reconcile: activation
 			_, _ = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: subNamePlanChange, Namespace: namespace},
 			})
