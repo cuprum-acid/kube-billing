@@ -330,6 +330,8 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj client.Object) []reconcile.Request {
+	ctx, span := Tracer.Start(ctx, "MapPlanToSubscriptions")
+	defer span.End()
 
 	logger := log.FromContext(ctx)
 
@@ -362,9 +364,6 @@ func (r *SubscriptionReconciler) mapPlanToSubscriptions(ctx context.Context, obj
 		"plan", plan.Name,
 		"affectedSubscriptions", len(requests),
 	)
-
-	_, span := Tracer.Start(ctx, "MapPlanToSubscriptions")
-	defer span.End()
 
 	return requests
 }

@@ -7,18 +7,23 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 )
 
-var Tracer = otel.Tracer("kube-billing")
+const serviceName = "kube-billing"
 
-// InitTracer initializes the OpenTelemetry tracer.
-// The OTLP endpoint can be configured via OTEL_EXPORTER_OTLP_ENDPOINT environment variable.
-// Default endpoint is localhost:4318 (HTTP, insecure).
+var Tracer = otel.Tracer(serviceName)
+
+// InitTracer initializes the OpenTelemetry tracer with a Resource carrying
+// service.name=kube-billing so that traces are queryable by service name
+// in the Jaeger UI rather than landing under "unknown_service:main".
+// The OTLP endpoint is read from OTEL_EXPORTER_OTLP_ENDPOINT (default
+// localhost:4318, HTTP, insecure).
 func InitTracer() func() {
 	ctx := context.Background()
 
-	// Read endpoint from environment variable or use default
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "localhost:4318"
@@ -35,8 +40,16 @@ func InitTracer() func() {
 		log.Fatal(err)
 	}
 
+	res, err := resource.New(ctx,
+		resource.WithAttributes(semconv.ServiceName(serviceName)),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
+		trace.WithResource(res),
 	)
 
 	otel.SetTracerProvider(tp)

@@ -23,5 +23,8 @@ spec:
           matchLabels:
             metrics: enabled  # Only from namespaces with this label
       ports:
-        - port: 8443
+        # Must match the metrics container port in config/manager/manager.yaml
+        # (named "metrics") and the Service exposing it. Currently 8080.
+        # Bump to 8443 here if metrics-secure=true is ever re-enabled.
+        - port: 8080
           protocol: TCP
