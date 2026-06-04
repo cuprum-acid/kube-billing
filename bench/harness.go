@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -68,7 +68,11 @@ func main() {
 	// Verify the BillingPlan exists before generating load.
 	var bp billingv1alpha1.BillingPlan
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: *plan, Namespace: *ns}, &bp); err != nil {
-		log.Fatalf("BillingPlan %q in namespace %q not found: %v (apply config/samples/billing_v1alpha1_billingplan.yaml first)", *plan, *ns, err)
+		log.Fatalf(
+			"BillingPlan %q in namespace %q not found: %v "+
+				"(apply config/samples/billing_v1alpha1_billingplan.yaml first)",
+			*plan, *ns, err,
+		)
 	}
 
 	type sample struct {
@@ -92,9 +96,7 @@ func main() {
 
 	runStart := time.Now()
 	for w := 0; w < *c; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range jobs {
 				name := fmt.Sprintf("%s-%d", *prefix, i)
 				sub := &billingv1alpha1.Subscription{
@@ -139,7 +141,7 @@ func main() {
 					reachedActive: reached,
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	totalWall := time.Since(runStart)
@@ -155,17 +157,22 @@ func main() {
 			activates = append(activates, s.activateDur)
 		}
 	}
-	sort.Slice(creates, func(i, j int) bool { return creates[i] < creates[j] })
-	sort.Slice(activates, func(i, j int) bool { return activates[i] < activates[j] })
+	slices.Sort(creates)
+	slices.Sort(activates)
 
-	fmt.Printf("n=%d c=%d ns=%s plan=%s wall=%s\n", *n, *c, *ns, *plan, totalWall.Round(time.Millisecond))
-	fmt.Printf("create:   ok=%d throughput=%.1f req/s\n", len(creates), float64(len(creates))/totalWall.Seconds())
+	fmt.Printf("n=%d c=%d ns=%s plan=%s wall=%s\n",
+		*n, *c, *ns, *plan, totalWall.Round(time.Millisecond))
+	fmt.Printf("create:   ok=%d throughput=%.1f req/s\n",
+		len(creates), float64(len(creates))/totalWall.Seconds())
 	if len(creates) > 0 {
-		fmt.Printf("          p50=%s p95=%s p99=%s\n", pctile(creates, 0.5), pctile(creates, 0.95), pctile(creates, 0.99))
+		fmt.Printf("          p50=%s p95=%s p99=%s\n",
+			pctile(creates, 0.5), pctile(creates, 0.95), pctile(creates, 0.99))
 	}
-	fmt.Printf("activate: ok=%d fail=%d converged=%.1f /s\n", successCount, failCount, float64(successCount)/totalWall.Seconds())
+	fmt.Printf("activate: ok=%d fail=%d converged=%.1f /s\n",
+		successCount, failCount, float64(successCount)/totalWall.Seconds())
 	if len(activates) > 0 {
-		fmt.Printf("          p50=%s p95=%s p99=%s\n", pctile(activates, 0.5), pctile(activates, 0.95), pctile(activates, 0.99))
+		fmt.Printf("          p50=%s p95=%s p99=%s\n",
+			pctile(activates, 0.5), pctile(activates, 0.95), pctile(activates, 0.99))
 	}
 
 	if *out != "" {
