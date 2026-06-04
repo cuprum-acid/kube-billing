@@ -226,6 +226,9 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, err
 		}
 
+		r.Recorder.Event(&sub, "Normal", "SubscriptionActivated",
+			"Subscription successfully activated")
+
 		_ = r.updateBillingPlanStatus(ctx, plan.Name, req.Namespace)
 
 		return ctrl.Result{RequeueAfter: billingInterval}, nil
