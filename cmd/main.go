@@ -83,8 +83,12 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	// Default to production-grade JSON logging so structured fields land
+	// in the same format that downstream log aggregators (Loki, ELK, etc.)
+	// expect. Operators can opt in to dev-mode console logging by passing
+	// --zap-devel on the command line.
 	opts := zap.Options{
-		Development: true,
+		Development: false,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
