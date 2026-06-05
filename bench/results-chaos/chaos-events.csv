@@ -1,0 +1,12 @@
+t_ms,event
+12293,controller_start
+12888,controller_ready_pid_13771
+12907,batch_start_p1_n30_c5_t2m
+14219,batch_end_p1
+22270,controller_kill_requested_pid_13771
+22281,controller_killed
+22289,batch_start_p2_n30_c5_t1s
+29191,batch_end_p2
+41215,controller_start
+41778,controller_ready_pid_14826
+59961,experiment_end
