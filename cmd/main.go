@@ -61,6 +61,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var maxConcurrentReconciles int
 	var tlsOpts []func(*tls.Config)
 
 	shutdown := controller.InitTracer()
@@ -83,6 +84,10 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 1,
+		"Maximum number of concurrent reconciles for the Subscription controller. "+
+			"Higher values let the controller drain the work-queue faster under "+
+			"concurrent submissions (see thesis §5.4).")
 	// Default to production-grade JSON logging so structured fields land
 	// in the same format that downstream log aggregators (Loki, ELK, etc.)
 	// expect. Operators can opt in to dev-mode console logging by passing
@@ -190,7 +195,7 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("kube-billing"),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, maxConcurrentReconciles); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Subscription")
 		os.Exit(1)
 	}

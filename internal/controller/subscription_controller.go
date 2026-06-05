@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -321,7 +322,15 @@ func (r *SubscriptionReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+//
+// maxConcurrentReconciles bounds how many reconcile workers run in
+// parallel. Controller-runtime defaults to 1; the harness sweep behind
+// thesis §5.4 exercises 1 and 4 so the reader can see the work-queue
+// wait collapse as the worker pool grows.
+func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles int) error {
+	if maxConcurrentReconciles <= 0 {
+		maxConcurrentReconciles = 1
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&billingv1alpha1.Subscription{}).
 		Named("subscription").
@@ -329,6 +338,7 @@ func (r *SubscriptionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&billingv1alpha1.BillingPlan{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlanToSubscriptions),
 		).
+		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrentReconciles}).
 		Complete(r)
 }
 
