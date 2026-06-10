@@ -60,6 +60,9 @@ type SubscriptionReconciler struct {
 // +kubebuilder:rbac:groups=billing.cloud-native.io,resources=subscriptions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=billing.cloud-native.io,resources=subscriptions/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=billing.cloud-native.io,resources=subscriptions/finalizers,verbs=update
+// +kubebuilder:rbac:groups=billing.cloud-native.io,resources=billingplans,verbs=get;list;watch
+// +kubebuilder:rbac:groups=billing.cloud-native.io,resources=billingplans/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

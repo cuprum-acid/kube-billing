@@ -1,0 +1,4 @@
+NAME                                               CPU(cores)   MEMORY(bytes)   
+kube-billing-controller-manager-69ccd74f55-htd5l   3m           23Mi            
+kube-billing-controller-manager-69ccd74f55-ldscc   2m           9Mi             
+kube-billing-controller-manager-69ccd74f55-mwkz4   2m           9Mi             

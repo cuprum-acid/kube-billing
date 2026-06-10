@@ -5,6 +5,30 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - billing.cloud-native.io
+  resources:
+  - billingplans
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - billing.cloud-native.io
+  resources:
+  - billingplans/status
+  - subscriptions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - billing.cloud-native.io
   resources:
   - subscriptions
@@ -21,12 +45,4 @@ rules:
   resources:
   - subscriptions/finalizers
   verbs:
-  - update
-- apiGroups:
-  - billing.cloud-native.io
-  resources:
-  - subscriptions/status
-  verbs:
-  - get
-  - patch
   - update
