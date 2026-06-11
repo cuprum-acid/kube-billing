@@ -1,0 +1,5 @@
+n=200 c=50 ns=default plan=bench-rsrc wall=5.037s
+create:   ok=200 throughput=39.7 req/s
+          p50=7.034667ms p95=113.113625ms p99=115.480416ms
+activate: ok=200 fail=0 converged=39.7 /s
+          p50=1.052983459s p95=1.893865416s p99=1.921258667s
